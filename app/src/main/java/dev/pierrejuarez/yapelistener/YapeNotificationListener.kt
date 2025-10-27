@@ -86,28 +86,70 @@ class YapeNotificationListener: NotificationListenerService() {
     }
 
     private fun extraerPersona(mensaje: String): String {
-        // Patrón: "NOMBRE te envió un pago" o "Yape! NOMBRE te envió"
-        val regexEnvio = """Yape!\s+([A-Z\s]+)\s+te\s+envi[oó]""".toRegex(RegexOption.IGNORE_CASE)
-        val matchEnvio = regexEnvio.find(mensaje)
+        var nombreCompleto: String? = null
+
+        // Patrón: "NOMBRE te envió" (captura todo hasta "te envió")
+        // Primero removemos "Yape!" si existe al inicio
+        val mensajeLimpio = mensaje.replace("""^Yape!\s+""".toRegex(RegexOption.IGNORE_CASE), "")
+
+        val regexEnvio = """^(.+?)\s+te\s+envi[oó]""".toRegex(RegexOption.IGNORE_CASE)
+        val matchEnvio = regexEnvio.find(mensajeLimpio)
         if (matchEnvio != null) {
-            return matchEnvio.groupValues[1].trim()
+            nombreCompleto = matchEnvio.groupValues[1].trim()
         }
 
         // Patrón: "Enviaste a NOMBRE" o "Pagaste a NOMBRE"
-        val regexA = """(?:Enviaste|Pagaste)\s+(?:a\s+)?([A-Z\s]+?)(?:\s+por\s+S/)""".toRegex(RegexOption.IGNORE_CASE)
-        val matchA = regexA.find(mensaje)
-        if (matchA != null) {
-            return matchA.groupValues[1].trim()
+        if (nombreCompleto == null) {
+            val regexA = """(?:Enviaste|Pagaste)\s+(?:a\s+)?(.+?)(?:\s+por\s+S/)""".toRegex(RegexOption.IGNORE_CASE)
+            val matchA = regexA.find(mensajeLimpio)
+            if (matchA != null) {
+                nombreCompleto = matchA.groupValues[1].trim()
+            }
         }
 
         // Patrón: "Recibiste de NOMBRE"
-        val regexDe = """Recibiste\s+(?:de\s+)?([A-Z\s]+?)(?:\s+por\s+S/|\s*$)""".toRegex(RegexOption.IGNORE_CASE)
-        val matchDe = regexDe.find(mensaje)
-        if (matchDe != null) {
-            return matchDe.groupValues[1].trim()
+        if (nombreCompleto == null) {
+            val regexDe = """Recibiste\s+(?:de\s+)?(.+?)(?:\s+por\s+S/|\s*$)""".toRegex(RegexOption.IGNORE_CASE)
+            val matchDe = regexDe.find(mensajeLimpio)
+            if (matchDe != null) {
+                nombreCompleto = matchDe.groupValues[1].trim()
+            }
         }
 
-        return "Desconocido"
+        // Formatear nombre: extraer primer nombre y primer apellido principal
+        return if (nombreCompleto != null) {
+            formatearNombre(nombreCompleto)
+        } else {
+            "Desconocido"
+        }
+    }
+
+    private fun formatearNombre(nombreCompleto: String): String {
+        // Dividir el nombre en partes
+        val partes = nombreCompleto.split("""\s+""".toRegex())
+
+        if (partes.isEmpty()) return "Desconocido"
+
+        // Buscar el primer nombre completo (no inicial) y primer apellido completo (no inicial)
+        var primerNombre: String? = null
+        var primerApellido: String? = null
+
+        for (parte in partes) {
+            val esInicial = parte.matches("""[A-Z]\.?""".toRegex())
+
+            if (primerNombre == null && !esInicial) {
+                primerNombre = parte
+            } else if (primerNombre != null && primerApellido == null && !esInicial) {
+                primerApellido = parte
+                break
+            }
+        }
+
+        return when {
+            primerNombre != null && primerApellido != null -> "$primerNombre $primerApellido"
+            primerNombre != null -> primerNombre
+            else -> partes[0] // Fallback al primer elemento
+        }
     }
 
     private fun detectarTipo(mensaje: String): String {
